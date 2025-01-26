@@ -11,11 +11,6 @@ import random
 import string
 import requests
 
-base_url = 'URL ON YOUR MARZBAN PANEL'
-yours_username = 'USERNAME'
-yours_password = 'PASSWORD'
-ssl = True
-
 
 def generate_random_string(length=24):
     characters = string.ascii_letters + string.digits
@@ -97,10 +92,10 @@ class Marzipan:
 # Асинхронный запуск программы
 async def main():
     client = Marzipan(
-        url=base_url,
-        username=yours_username,
-        password=yours_password,
-        ssl=ssl
+        url="https://domkrat.linkpc.net:11445",
+        username='admin1',
+        password='df61f27e889e5b8307c3d7affd63b7cf',
+        ssl=True
     )
     await client.async_init()
     print(await client.new_user(name='kolya'))
