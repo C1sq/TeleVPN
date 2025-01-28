@@ -1,9 +1,9 @@
 import asyncio
 from datetime import datetime, timedelta
 from typing import LiteralString
-
+from urllib.parse import urlparse, urlunparse
 from marzban_api_client import AuthenticatedClient
-from marzban_api_client.api.user import add_user, get_user
+from marzban_api_client.api.user import add_user, get_user, delete_expired_users
 from marzban_api_client.models import UserCreateProxies
 from marzban_api_client.models.user_response import UserResponse
 from marzban_api_client.models.user_create import UserCreate
@@ -15,6 +15,12 @@ base_url = 'URL ON YOUR MARZBAN PANEL'
 yours_username = 'USERNAME'
 yours_password = 'PASSWORD'
 ssl = True
+
+
+def symp_url(url: str) -> str:
+    parsed_url = urlparse(url)
+    short_url = urlunparse((parsed_url.scheme, parsed_url.netloc, '', '', '', ''))
+    return short_url
 
 
 def generate_random_string(length=24):
@@ -34,7 +40,7 @@ def random_proxies():
 class Marzipan:
     def __init__(self, username: str, password: str, ssl: bool, url: str):
         self.client = None
-        self.base_url = url
+        self.base_url = symp_url(url)
         self.data = {
             'username': username,
             'password': password,
@@ -93,6 +99,9 @@ class Marzipan:
         """Создание временной подписки."""
         return await self.new_user(name=generate_random_string(5), days=timedelta(minutes=30), data_limit=1073741824)
 
+    async def delet_exp(self):
+        await delete_expired_users.asyncio(client=self.client, expired_before=datetime.now())
+
 
 # Асинхронный запуск программы
 async def main():
@@ -103,7 +112,9 @@ async def main():
         ssl=ssl
     )
     await client.async_init()
-    print(await client.new_user(name='kolya'))
+    await client.delet_exp()
+    print(await client.get_trial_subscription())
+    '''print(await client.new_user(name='kolya'))'''
 
 
 if __name__ == '__main__':
