@@ -108,6 +108,7 @@ async def main():
 
         # Получаем запись и выводим значение поля trial_germany
         us = get_keys(connection, telegram_id='87324')
+        print(us)
         if us is not None:
             print("trial_germany =", us['trial_germany'])
         else:

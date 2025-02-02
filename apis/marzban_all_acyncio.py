@@ -2,6 +2,8 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import LiteralString
 from urllib.parse import urlparse, urlunparse
+
+from dulwich.porcelain import fetch
 from marzban_api_client import AuthenticatedClient
 from marzban_api_client.api.user import add_user, get_user, delete_expired_users
 from marzban_api_client.models import UserCreateProxies
@@ -82,7 +84,6 @@ class Marzipan:
             data=self.data
         )
         token = token_response.json().get('access_token')
-        print(token)
         if not token:
             raise ValueError("Ошибка: Неверный логин или пароль")
 
@@ -134,7 +135,7 @@ class Marzipan:
             print(123)
             return short_link
         except:
-            await ins_in_sql(connection=connection, name=name, telegram_id=telegram_id, param=param)
+            await ins_in_sql(connection=connection, name=name, telegram_id=telegram_id, param='trial_' + param)
             return await self.new_user(name=name, days=timedelta(minutes=30), data_limit=1073741824)
         finally:
             connection.close()
@@ -148,7 +149,6 @@ class Marzipan:
         try:
             key = get_keys(connection=connection, telegram_id=telegram_id)[param]
             response1: UserResponse = await get_user.asyncio(client=self.client, username=key)
-            print(response1)
             full_link = '\n'.join(response1.links[:-2:])
             short_link = f'{self.base_url}{response1.subscription_url}'
             print(123)
@@ -162,15 +162,31 @@ class Marzipan:
     async def delet_exp(self):
         await delete_expired_users.asyncio(client=self.client, expired_before=datetime.now())
 
-    async def get_key_(self, telegram_id: str, param: str) -> str | None:
+    async def get_key_(self, telegram_id: str) -> str | None:
+        keys = []
         connection = create_connection()
         connection.autocommit = True
         try:
-            key = get_keys(connection=connection, telegram_id=telegram_id)[param]
-            response1: UserResponse = await get_user.asyncio(client=self.client, username=key)
-            full_link = '\n'.join(response1.links[:-2:])
-            short_link = f'{self.base_url}{response1.subscription_url}'
-            return short_link
+            keyl = list(get_keys(connection=connection, telegram_id=telegram_id).items())[2:]
+            '''params = [
+                'trial_nederland',
+                'nederland',
+                'trial_france',
+                'france',
+                'trial_germany',
+                'germany',
+            ]'''
+            for _, i in keyl:
+                try:
+                    key = i
+                    response1: UserResponse = await get_user.asyncio(client=self.client, username=key)
+                    full_link = '\n'.join(response1.links[:-2:])
+                    short_link = f'{self.base_url}{response1.subscription_url}'
+                    keys.append(short_link)
+                except:
+                    keys.append(None)
+
+            return keys
         except:
             return None
 
@@ -187,12 +203,10 @@ async def main():
     await client.async_init()
     await client.delet_exp()
     # print(await client.get_trial_subscription(telegram_id='2281337', param='france'))
-    # print(await client.get_key_(telegram_id='2281337',param='france'))
+    print(await client.get_key_(telegram_id='2281337'))
 
-    # print( await get_user.asyncio(client=client.client,username='kolya'))
+    # print(await client.get_subscription(telegram_id='2281337', param='france'))
 
-
-asyncio.run(main())
 
 if __name__ == '__main__':
-    pass
+    asyncio.run(main())
