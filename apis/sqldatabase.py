@@ -12,7 +12,8 @@ class UserRecord:
 
 
 async def insertion(connection, telegram_id: str, trial_nederland: str = None, nederland: str = None,
-              trial_france: str = None, france: str = None, trial_germany: str = None, germany: str = None) -> None:
+                    trial_france: str = None, france: str = None, trial_germany: str = None,
+                    germany: str = None) -> None:
     """
     Вставляет запись в таблицу users1. Если запись с таким TELEGRAM_ID уже существует, обновляет поля.
     """
@@ -52,6 +53,7 @@ def get_keys(connection, telegram_id: str):
         columns = [desc[0] for desc in cursor.description]'''
         return row
 
+
 def get_columns(connection):
     with connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
         cursor.execute(
@@ -61,6 +63,8 @@ def get_columns(connection):
         )
         row = cursor.fetchone()
         return row
+
+
 def create_connection():
     """
     Создает и возвращает соединение с базой данных.
