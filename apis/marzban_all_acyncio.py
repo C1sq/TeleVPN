@@ -10,16 +10,15 @@ from marzban_api_client.models.user_create import UserCreate
 import random
 import string
 import requests
+from apis.data.sqldatabase import insertion, create_connection, check_and_create_table
 
-base_url = 'URL ON YOUR MARZBAN PANEL'
-yours_username = 'USERNAME'
-yours_password = 'PASSWORD'
-ssl = True
+from config_marzban import base_url, yours_username, yours_password, ssl
 
 
 def symp_url(url: str) -> str:
     parsed_url = urlparse(url)
     short_url = urlunparse((parsed_url.scheme, parsed_url.netloc, '', '', '', ''))
+    print(short_url)
     return short_url
 
 
@@ -35,6 +34,34 @@ def random_proxies():
              'trojan': {'password': generate_random_string(24), 'flow': ''},
              'shadowsocks': {'password': generate_random_string(24), 'method': 'chacha20-ietf-poly1305'}}
     return UserCreateProxies.from_dict(proxi)
+
+
+def ins_in_sql(connection, name: str, telegram_id: str, param: str):
+    """params = [
+            france,
+            trial_france,
+            germany,
+            trial_germany,
+            nederland,
+            trial_nederland,
+
+            ]"""
+    print(name,param)
+
+    match param:
+        case 'france':
+            insertion(connection=connection, telegram_id=telegram_id, france=name)
+        case 'trial_france':
+            print(1)
+            insertion(connection=connection, telegram_id=telegram_id, trial_france=name)
+        case 'germany':
+            insertion(connection=connection, telegram_id=telegram_id, germany=name)
+        case 'trial_germany':
+            insertion(connection=connection, telegram_id=telegram_id, trial_germany=name)
+        case 'nederland':
+            insertion(connection=connection, telegram_id=telegram_id, nederland=name)
+        case 'trial_nederland':
+            insertion(connection=connection, telegram_id=telegram_id, trial_nederland=name)
 
 
 class Marzipan:
@@ -56,7 +83,7 @@ class Marzipan:
             data=self.data
         )
         token = token_response.json().get('access_token')
-
+        print(token)
         if not token:
             raise ValueError("Ошибка: Неверный логин или пароль")
 
@@ -95,9 +122,25 @@ class Marzipan:
             short_link = f'{self.base_url}{response1.subscription_url}'
             return short_link, full_link, limit_time
 
-    async def get_trial_subscription(self):
+    async def get_trial_subscription(self, telegram_id: str, param: str):
         """Создание временной подписки."""
-        return await self.new_user(name=generate_random_string(5), days=timedelta(minutes=30), data_limit=1073741824)
+        name = generate_random_string(5)
+        connection = create_connection()
+        connection.autocommit = True
+        check_and_create_table(connection)
+        ins_in_sql(connection=connection, name=name, telegram_id=telegram_id, param='trial_' + param)
+        connection.close()
+        return await self.new_user(name=name, days=timedelta(minutes=30), data_limit=1073741824)
+
+    async def get_subscription(self, telegram_id: str, param: str):
+        """Создание подписки."""
+        name = generate_random_string(5)
+        connection = create_connection()
+        connection.autocommit = True
+        check_and_create_table(connection)
+        ins_in_sql(connection=connection, name=name, telegram_id=telegram_id, param=param)
+        connection.close()
+        return await self.new_user(name=name, days=timedelta(days=30))
 
     async def delet_exp(self):
         await delete_expired_users.asyncio(client=self.client, expired_before=datetime.now())
@@ -111,10 +154,12 @@ async def main():
         password=yours_password,
         ssl=ssl
     )
+
     await client.async_init()
     await client.delet_exp()
-    print(await client.get_trial_subscription())
-    '''print(await client.new_user(name='kolya'))'''
+    print(await client.get_trial_subscription(telegram_id='2281337', param='france'))
+
+    # print( await get_user.asyncio(client=client.client,username='kolya'))
 
 
 if __name__ == '__main__':
