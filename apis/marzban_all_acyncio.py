@@ -127,7 +127,7 @@ class Marzipan:
         connection.autocommit = True
         check_and_create_table(connection)
         try:
-            key = get_keys(connection=connection, telegram_id=telegram_id)['trial_'+param]
+            key = get_keys(connection=connection, telegram_id=telegram_id)['trial_' + param]
             response1: UserResponse = await get_user.asyncio(client=self.client, username=key)
             full_link = '\n'.join(response1.links[:-2:])
             short_link = f'{self.base_url}{response1.subscription_url}'
@@ -162,6 +162,18 @@ class Marzipan:
     async def delet_exp(self):
         await delete_expired_users.asyncio(client=self.client, expired_before=datetime.now())
 
+    async def get_key_(self, telegram_id: str, param: str) -> str | None:
+        connection = create_connection()
+        connection.autocommit = True
+        try:
+            key = get_keys(connection=connection, telegram_id=telegram_id)[param]
+            response1: UserResponse = await get_user.asyncio(client=self.client, username=key)
+            full_link = '\n'.join(response1.links[:-2:])
+            short_link = f'{self.base_url}{response1.subscription_url}'
+            return short_link
+        except:
+            return None
+
 
 # Асинхронный запуск программы
 async def main():
@@ -174,10 +186,13 @@ async def main():
 
     await client.async_init()
     await client.delet_exp()
-    print(await client.get_trial_subscription(telegram_id='2281337', param='france'))
+    # print(await client.get_trial_subscription(telegram_id='2281337', param='france'))
+    # print(await client.get_key_(telegram_id='2281337',param='france'))
 
     # print( await get_user.asyncio(client=client.client,username='kolya'))
 
 
+asyncio.run(main())
+
 if __name__ == '__main__':
-    asyncio.run(main())
+    pass
