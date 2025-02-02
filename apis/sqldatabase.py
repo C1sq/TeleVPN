@@ -52,7 +52,15 @@ def get_keys(connection, telegram_id: str):
         columns = [desc[0] for desc in cursor.description]'''
         return row
 
-
+def get_columns(connection):
+    with connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+        cursor.execute(
+            '''
+            SELECT * FROM users1 
+            '''
+        )
+        row = cursor.fetchone()
+        return row
 def create_connection():
     """
     Создает и возвращает соединение с базой данных.
@@ -104,7 +112,7 @@ async def main():
         check_and_create_table(connection)
 
         # Пример вставки записи
-        await insertion(connection, telegram_id='87324', trial_germany='aBcw8')
+        '''await insertion(connection, telegram_id='87324', trial_germany='aBcw8')
 
         # Получаем запись и выводим значение поля trial_germany
         us = get_keys(connection, telegram_id='87324')
@@ -112,7 +120,8 @@ async def main():
         if us is not None:
             print("trial_germany =", us['trial_germany'])
         else:
-            print("Запись не найдена.")
+            print("Запись не найдена.")'''
+        print(list(get_columns(connection=connection))[2:])
 
     except Exception as e:
         print("Произошла ошибка:", e)
