@@ -159,10 +159,10 @@ class Marzipan:
         finally:
             connection.close()
 
-    async def delet_exp(self):
+    async def delete_exp(self):
         await delete_expired_users.asyncio(client=self.client, expired_before=datetime.now())
 
-    async def get_key_(self, telegram_id: str) -> str | None:
+    async def get_key_(self, telegram_id: str) -> list[str | None] | None:
         keys = []
         connection = create_connection()
         connection.autocommit = True
@@ -199,11 +199,10 @@ async def main():
         password=yours_password,
         ssl=ssl
     )
-
     await client.async_init()
-    await client.delet_exp()
+    await client.delete_exp()
     # print(await client.get_trial_subscription(telegram_id='2281337', param='france'))
-    print(await client.get_key_(telegram_id='2281337'))
+    print(await client.get_key_(telegram_id='87324'))
 
     # print(await client.get_subscription(telegram_id='2281337', param='france'))
 
