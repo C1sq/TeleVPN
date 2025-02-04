@@ -15,34 +15,34 @@ async def insertion(connection, telegram_id: str, trial_nederland: str = None, n
                     trial_france: str = None, france: str = None, trial_germany: str = None,
                     germany: str = None) -> None:
     """
-    Вставляет запись в таблицу users1. Если запись с таким TELEGRAM_ID уже существует, обновляет поля.
+    Вставляет запись в таблицу users. Если запись с таким TELEGRAM_ID уже существует, обновляет поля.
     """
     with connection.cursor() as cursor:
         cursor.execute(
             '''
-            INSERT INTO users1 (TELEGRAM_ID, TRIAL_NEDERLAND, NEDERLAND, TRIAL_FRANCE, FRANCE, TRIAL_GERMANY, GERMANY)
+            INSERT INTO users (TELEGRAM_ID, TRIAL_NEDERLAND, NEDERLAND, TRIAL_FRANCE, FRANCE, TRIAL_GERMANY, GERMANY)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (TELEGRAM_ID) DO UPDATE SET
-                TRIAL_NEDERLAND = COALESCE(EXCLUDED.TRIAL_NEDERLAND, users1.TRIAL_NEDERLAND),
-                NEDERLAND = COALESCE(EXCLUDED.NEDERLAND, users1.NEDERLAND),
-                TRIAL_FRANCE = COALESCE(EXCLUDED.TRIAL_FRANCE, users1.TRIAL_FRANCE),
-                FRANCE = COALESCE(EXCLUDED.FRANCE, users1.FRANCE),
-                TRIAL_GERMANY = COALESCE(EXCLUDED.TRIAL_GERMANY, users1.TRIAL_GERMANY),
-                GERMANY = COALESCE(EXCLUDED.GERMANY, users1.GERMANY)
+                TRIAL_NEDERLAND = COALESCE(EXCLUDED.TRIAL_NEDERLAND, users.TRIAL_NEDERLAND),
+                NEDERLAND = COALESCE(EXCLUDED.NEDERLAND, users.NEDERLAND),
+                TRIAL_FRANCE = COALESCE(EXCLUDED.TRIAL_FRANCE, users.TRIAL_FRANCE),
+                FRANCE = COALESCE(EXCLUDED.FRANCE, users.FRANCE),
+                TRIAL_GERMANY = COALESCE(EXCLUDED.TRIAL_GERMANY, users.TRIAL_GERMANY),
+                GERMANY = COALESCE(EXCLUDED.GERMANY, users.GERMANY)
             ''',
             (telegram_id, trial_nederland, nederland, trial_france, france, trial_germany, germany)
         )
 
 
-def get_keys(connection, telegram_id: str):
+def get_url(connection, telegram_id: str):
     """
-    Получает запись из таблицы users1 по TELEGRAM_ID и возвращает объект UserRecord.
+    Получает запись из таблицы users по TELEGRAM_ID и возвращает объект UserRecord.
     Если запись не найдена, возвращает None.
     """
     with connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
         cursor.execute(
             '''
-            SELECT * FROM users1 WHERE TELEGRAM_ID = %s
+            SELECT * FROM users WHERE TELEGRAM_ID = %s
             ''',
             (telegram_id,)
         )
@@ -58,7 +58,7 @@ def get_columns(connection):
     with connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
         cursor.execute(
             '''
-            SELECT * FROM users1 
+            SELECT * FROM users 
             '''
         )
         row = cursor.fetchone()
@@ -78,26 +78,52 @@ def create_connection():
     )
 
 
+async def delete_data(connection, telegram_id: str, param: str):
+    with connection.cursor() as cursor:
+        query = f"""
+        UPDATE users
+        SET {param} = NULL
+        WHERE telegram_id = %s
+        """
+        cursor.execute(query, (telegram_id,))
+        connection.commit()
+
+async def delete_url(mode: str, telegram_id: str, param: str):
+    time_mapping = {"30min": 18, "30days": 2592000}  # 1800 секунд = 30 минут
+    wait_time = time_mapping.get(mode)
+
+    await asyncio.sleep(wait_time)  # Ждём 30 минут или 30 дней
+
+    connection = create_connection()  # Заново создаем подключение
+    connection.autocommit = True
+
+    try:
+        await delete_data(connection, telegram_id, param)  # Удаляем данные
+    finally:
+        connection.close()  # Закрываем соединение
+
+
+
 def check_and_create_table(connection):
     """
-    Проверяет наличие таблицы users1 и создает ее, если она не существует.
+    Проверяет наличие таблицы users и создает ее, если она не существует.
     """
     with connection.cursor() as cursor:
-        cursor.execute("SELECT to_regclass('public.users1');")
+        cursor.execute("SELECT to_regclass('public.users');")
         result = cursor.fetchone()
         if result[0] is None:
             print("Таблица не существует, создаем таблицу...")
             cursor.execute(
                 '''
-                CREATE TABLE users1(
+                CREATE TABLE users(
                     id serial PRIMARY KEY,
                     TELEGRAM_ID varchar(20) NOT NULL UNIQUE,
-                    TRIAL_NEDERLAND varchar(6),
-                    NEDERLAND varchar(6),
-                    TRIAL_FRANCE varchar(6),
-                    FRANCE varchar(6),
-                    TRIAL_GERMANY varchar(6),
-                    GERMANY varchar(6)
+                    TRIAL_NEDERLAND varchar(64),
+                    NEDERLAND varchar(64),
+                    TRIAL_FRANCE varchar(64),
+                    FRANCE varchar(64),
+                    TRIAL_GERMANY varchar(64),
+                    GERMANY varchar(64)
                 )
                 '''
             )
