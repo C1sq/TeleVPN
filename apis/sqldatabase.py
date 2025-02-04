@@ -89,7 +89,7 @@ async def delete_data(connection, telegram_id: str, param: str):
         connection.commit()
 
 async def delete_url(mode: str, telegram_id: str, param: str):
-    time_mapping = {"30min": 18, "30days": 2592000}  # 1800 секунд = 30 минут
+    time_mapping = {"30min": 1800, "30days": 2592000}  # 1800 секунд = 30 минут
     wait_time = time_mapping.get(mode)
 
     await asyncio.sleep(wait_time)  # Ждём 30 минут или 30 дней

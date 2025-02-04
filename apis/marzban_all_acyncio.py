@@ -47,13 +47,11 @@ async def ins_in_sql(connection, name: str, telegram_id: str, param: str):
             trial_nederland,
 
             ]"""
-    print(name, param)
 
     match param:
         case 'france':
             await insertion(connection=connection, telegram_id=telegram_id, france=name)
         case 'trial_france':
-            print(1)
             await insertion(connection=connection, telegram_id=telegram_id, trial_france=name)
         case 'germany':
             await insertion(connection=connection, telegram_id=telegram_id, germany=name)
@@ -120,7 +118,6 @@ class Marzipan:
             return short_link
 
     async def get_trial_subscription(self, telegram_id: str, param: str):
-        global delete_task
         """Создание временной подписки."""
         name = 'a' + generate_random_string(5)
         connection = create_connection()
@@ -204,7 +201,6 @@ async def main():
     # print(await client.(telegram_id='2281337'))
 
     print(await client.get_subscription(telegram_id='2281337', param='france'))
-
 
 if __name__ == '__main__':
     asyncio.run(main())
