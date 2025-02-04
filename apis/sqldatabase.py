@@ -34,12 +34,15 @@ async def insertion(connection, telegram_id: str, trial_nederland: str = None, n
         )
 
 
-def get_url(connection, telegram_id: str):
+async def get_url(telegram_id: str):
     """
     Получает запись из таблицы users по TELEGRAM_ID и возвращает объект UserRecord.
     Если запись не найдена, возвращает None.
     """
-    with connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+    connection = create_connection()
+    connection.autocommit = True
+    with connection.cursor(
+            cursor_factory=psycopg2.extras.RealDictCursor) as cursor:  # cursor_factory=psycopg2.extras.RealDictCursor
         cursor.execute(
             '''
             SELECT * FROM users WHERE TELEGRAM_ID = %s
@@ -51,6 +54,7 @@ def get_url(connection, telegram_id: str):
             return None
 
         columns = [desc[0] for desc in cursor.description]'''
+        connection.close()
         return row
 
 
@@ -88,6 +92,7 @@ async def delete_data(connection, telegram_id: str, param: str):
         cursor.execute(query, (telegram_id,))
         connection.commit()
 
+
 async def delete_url(mode: str, telegram_id: str, param: str):
     time_mapping = {"30min": 1800, "30days": 2592000}  # 1800 секунд = 30 минут
     wait_time = time_mapping.get(mode)
@@ -101,7 +106,6 @@ async def delete_url(mode: str, telegram_id: str, param: str):
         await delete_data(connection, telegram_id, param)  # Удаляем данные
     finally:
         connection.close()  # Закрываем соединение
-
 
 
 def check_and_create_table(connection):

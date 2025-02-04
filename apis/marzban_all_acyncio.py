@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta
-from typing import LiteralString
+from typing import LiteralString, Any
 from urllib.parse import urlparse, urlunparse
 
 from dulwich.porcelain import fetch
@@ -125,7 +125,8 @@ class Marzipan:
         check_and_create_table(connection)
         param = 'trial_' + param
         try:
-            short_link = get_url(connection=connection, telegram_id=telegram_id)[param]
+            short_link = await get_url(telegram_id=telegram_id)
+            short_link = short_link.get(param)
             if short_link is not None:
                 return short_link
             else:
@@ -146,7 +147,9 @@ class Marzipan:
         connection.autocommit = True
         check_and_create_table(connection)
         try:
-            short_link = get_url(connection=connection, telegram_id=telegram_id)[param]
+            short_link = await get_url(telegram_id=telegram_id)
+            short_link = short_link.get(param)
+
             if short_link is not None:
                 return short_link
             else:
@@ -187,6 +190,11 @@ class Marzipan:
             return None'''
 
 
+async def get_link(telegram_id: str) -> dict[Any, Any] | dict[str, Any] | dict[str, str] | dict[bytes, bytes]:
+    links = await get_url(telegram_id=telegram_id)
+    return dict(links.items())
+
+
 # Асинхронный запуск программы
 async def main():
     client = Marzipan(
@@ -200,7 +208,9 @@ async def main():
     print(await client.get_trial_subscription(telegram_id='2281337', param='france'))
     # print(await client.(telegram_id='2281337'))
 
-    print(await client.get_subscription(telegram_id='2281337', param='france'))
+    # print(await client.get_subscription(telegram_id='2281337', param='france'))
+    print(await get_link('2281337'))
+
 
 if __name__ == '__main__':
     asyncio.run(main())
