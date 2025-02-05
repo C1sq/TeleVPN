@@ -24,7 +24,7 @@ async def insertion(connection, column: str, value_users: str, value_date, teleg
             ON CONFLICT (TELEGRAM_ID) DO UPDATE SET
                 {column} = COALESCE(EXCLUDED.{column},users.{column})
             ''',
-            (telegram_id,value_users)
+            (telegram_id, value_users)
         )
 
         # Обновление значения в таблице date
@@ -87,7 +87,6 @@ def create_connection():
         port=port,  # Убедитесь, что в config.py значение port корректное (например, число 5432 или строка '5432')
         dbname=dbname
     )
-
 
 
 from datetime import datetime, timedelta
@@ -158,8 +157,6 @@ async def delete_expired_data(connection, current_time):
 
     # Сохраняем изменения в базе данных
     connection.commit()
-
-
 
 
 # Закрываем соединение
@@ -234,7 +231,8 @@ async def main():
             print("trial_germany =", us['trial_germany'])
         else:
             print("Запись не найдена.")'''
-        await insertion(connection=connection,column='trial_france',telegram_id='2281337',value_users='popa',value_date=str(datetime.now()+timedelta(seconds=50)))
+        await insertion(connection=connection, column='trial_france', telegram_id='2281337', value_users='popa',
+                        value_date=str(datetime.now() + timedelta(seconds=50)))
         asyncio.create_task(check_and_delete_expired_data())
         await(asyncio.sleep(400))
         print(get_columns(connection))

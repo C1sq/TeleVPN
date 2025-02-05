@@ -36,6 +36,7 @@ def random_proxies():
              'shadowsocks': {'password': generate_random_string(24), 'method': 'chacha20-ietf-poly1305'}}
     return UserCreateProxies.from_dict(proxi)
 
+
 class Marzipan:
     def __init__(self, username: str, password: str, ssl: bool, url: str):
         self.client = None
@@ -106,7 +107,8 @@ class Marzipan:
                 raise
         except:
             short_link = await self.new_user(name=name, days=timedelta(minutes=30))
-            await insertion(connection=connection, value_users=short_link,value_date=datetime.now()+timedelta(minutes=30), telegram_id=telegram_id, column=param)
+            await insertion(connection=connection, value_users=short_link,
+                            value_date=datetime.now() + timedelta(minutes=30), telegram_id=telegram_id, column=param)
             return short_link
         finally:
             connection.close()
@@ -128,7 +130,8 @@ class Marzipan:
         except:
 
             short_link = await self.new_user(name=name, days=timedelta(days=30))
-            await insertion(connection=connection, value_users=short_link,value_date=datetime.now()+timedelta(days=30), telegram_id=telegram_id, column=param)
+            await insertion(connection=connection, value_users=short_link,
+                            value_date=datetime.now() + timedelta(days=30), telegram_id=telegram_id, column=param)
             return short_link
         finally:
             connection.close()
@@ -136,33 +139,11 @@ class Marzipan:
     async def delete_exp(self):
         await delete_expired_users.asyncio(client=self.client, expired_before=datetime.now())
 
-    '''async def get_key_(self, telegram_id: str) -> list[str | None] | None:
-        keys = []
-        connection = create_connection()
-        connection.autocommit = True
-        try:
-            keyl = list(get_keys(connection=connection, telegram_id=telegram_id).items())[2:]
-            params = [
-                'trial_nederland',
-                'nederland',
-                'trial_france',
-                'france',
-                'trial_germany',
-                'germany',
-            ]
-            for _, i in keyl:
-                
-                keys.append(i)
-
-            return keys
-        except:
-            return None'''
-
 
 async def get_link(telegram_id: str) -> list[Any]:
     links = await get_url(telegram_id=telegram_id)
-    key=[]
-    for _,i in links.items():
+    key = []
+    for _, i in links.items():
         key.append(i)
     return key[2:]
 
@@ -183,8 +164,9 @@ async def main():
     # print(await client.(telegram_id='2281337'))
     await asyncio.sleep(50)
 
-    #a= await get_link('2281337')
-    #print(a)
+    # a= await get_link('2281337')
+    # print(a)
+
 
 if __name__ == '__main__':
     asyncio.run(main())
