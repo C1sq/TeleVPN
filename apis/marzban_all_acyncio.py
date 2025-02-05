@@ -94,9 +94,8 @@ class Marzipan:
     async def get_trial_subscription(self, telegram_id: str, param: str):
         """Создание временной подписки."""
         name = 'a' + generate_random_string(5)
-        connection = create_connection()
-        connection.autocommit = True
-        check_and_create_table(connection)
+        connection = await create_connection()
+        await check_and_create_table()
         param = 'trial_' + param
         try:
             short_link = await get_url(telegram_id=telegram_id)
@@ -107,18 +106,17 @@ class Marzipan:
                 raise
         except:
             short_link = await self.new_user(name=name, days=timedelta(minutes=30))
-            await insertion(connection=connection, value_users=short_link,
-                            value_date=datetime.now() + timedelta(minutes=30), telegram_id=telegram_id, column=param)
+            asyncio.create_task(insertion(value_users=short_link,
+                            value_date=str(datetime.now() + timedelta(minutes=30)), telegram_id=telegram_id,
+                            column=param))
             return short_link
         finally:
-            connection.close()
+            await connection.close()
 
     async def get_subscription(self, telegram_id: str, param: str):
         """Создание подписки."""
         name = 'a' + generate_random_string(5)
-        connection = create_connection()
-        connection.autocommit = True
-        check_and_create_table(connection)
+        await check_and_create_table()
         try:
             short_link = await get_url(telegram_id=telegram_id)
             short_link = short_link.get(param)
@@ -130,11 +128,9 @@ class Marzipan:
         except:
 
             short_link = await self.new_user(name=name, days=timedelta(days=30))
-            await insertion(connection=connection, value_users=short_link,
-                            value_date=datetime.now() + timedelta(days=30), telegram_id=telegram_id, column=param)
+            asyncio.create_task(insertion(value_users=short_link,
+                            value_date=datetime.now() + timedelta(days=30), telegram_id=telegram_id, column=param))
             return short_link
-        finally:
-            connection.close()
 
     async def delete_exp(self):
         await delete_expired_users.asyncio(client=self.client, expired_before=datetime.now())
@@ -159,10 +155,11 @@ async def main():
     await client.async_init()
     await client.delete_exp()
     print(await client.get_trial_subscription(telegram_id='2281337', param='germany'))
-    asyncio.create_task(check_and_delete_expired_data())
+
     print(await client.get_trial_subscription(telegram_id='2281337', param='france'))
+    asyncio.create_task(check_and_delete_expired_data())
+    print(await get_link(telegram_id='2281337'))
     # print(await client.(telegram_id='2281337'))
-    await asyncio.sleep(50)
 
     # a= await get_link('2281337')
     # print(a)
