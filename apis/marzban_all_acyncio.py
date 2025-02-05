@@ -12,7 +12,7 @@ from marzban_api_client.models.user_create import UserCreate
 import random
 import string
 import requests
-from sqldatabase import insertion, create_connection, check_and_create_table, get_url, delete_url
+from sqldatabase import insertion, create_connection, check_and_create_table, get_url, check_and_delete_expired_data
 
 from config_marzban import base_url, yours_username, yours_password, ssl
 
@@ -35,33 +35,6 @@ def random_proxies():
              'trojan': {'password': generate_random_string(24), 'flow': ''},
              'shadowsocks': {'password': generate_random_string(24), 'method': 'chacha20-ietf-poly1305'}}
     return UserCreateProxies.from_dict(proxi)
-
-
-async def ins_in_sql(connection, name: str, telegram_id: str, param: str):
-    """params = [
-            france,
-            trial_france,
-            germany,
-            trial_germany,
-            nederland,
-            trial_nederland,
-
-            ]"""
-
-    match param:
-        case 'france':
-            await insertion(connection=connection, telegram_id=telegram_id, france=name)
-        case 'trial_france':
-            await insertion(connection=connection, telegram_id=telegram_id, trial_france=name)
-        case 'germany':
-            await insertion(connection=connection, telegram_id=telegram_id, germany=name)
-        case 'trial_germany':
-            await insertion(connection=connection, telegram_id=telegram_id, trial_germany=name)
-        case 'nederland':
-            await insertion(connection=connection, telegram_id=telegram_id, nederland=name)
-        case 'trial_nederland':
-            await insertion(connection=connection, telegram_id=telegram_id, trial_nederland=name)
-
 
 class Marzipan:
     def __init__(self, username: str, password: str, ssl: bool, url: str):
@@ -133,9 +106,7 @@ class Marzipan:
                 raise
         except:
             short_link = await self.new_user(name=name, days=timedelta(minutes=30))
-            await ins_in_sql(connection=connection, name=short_link, telegram_id=telegram_id, param=param)
-            asyncio.create_task(
-                delete_url(mode='30min', telegram_id=telegram_id, param=param))
+            await insertion(connection=connection, value_users=short_link,value_date=datetime.now()+timedelta(minutes=30), telegram_id=telegram_id, column=param)
             return short_link
         finally:
             connection.close()
@@ -157,9 +128,7 @@ class Marzipan:
         except:
 
             short_link = await self.new_user(name=name, days=timedelta(days=30))
-            await ins_in_sql(connection=connection, name=short_link, telegram_id=telegram_id, param=param)
-            asyncio.create_task(
-                delete_url(mode='30days', telegram_id=telegram_id, param=param))
+            await insertion(connection=connection, value_users=short_link,value_date=datetime.now()+timedelta(days=30), telegram_id=telegram_id, column=param)
             return short_link
         finally:
             connection.close()
@@ -190,9 +159,12 @@ class Marzipan:
             return None'''
 
 
-async def get_link(telegram_id: str) -> dict[Any, Any] | dict[str, Any] | dict[str, str] | dict[bytes, bytes]:
+async def get_link(telegram_id: str) -> list[Any]:
     links = await get_url(telegram_id=telegram_id)
-    return dict(links.items())
+    key=[]
+    for _,i in links.items():
+        key.append(i)
+    return key[2:]
 
 
 # Асинхронный запуск программы
@@ -205,12 +177,14 @@ async def main():
     )
     await client.async_init()
     await client.delete_exp()
+    print(await client.get_trial_subscription(telegram_id='2281337', param='germany'))
+    asyncio.create_task(check_and_delete_expired_data())
     print(await client.get_trial_subscription(telegram_id='2281337', param='france'))
     # print(await client.(telegram_id='2281337'))
+    await asyncio.sleep(50)
 
-    # print(await client.get_subscription(telegram_id='2281337', param='france'))
-    print(await get_link('2281337'))
-
+    #a= await get_link('2281337')
+    #print(a)
 
 if __name__ == '__main__':
     asyncio.run(main())

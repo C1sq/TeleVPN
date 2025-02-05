@@ -11,27 +11,34 @@ class UserRecord:
             setattr(self, column.lower(), value)
 
 
-async def insertion(connection, telegram_id: str, trial_nederland: str = None, nederland: str = None,
-                    trial_france: str = None, france: str = None, trial_germany: str = None,
-                    germany: str = None) -> None:
+async def insertion(connection, column: str, value_users: str, value_date, telegram_id: str) -> None:
     """
-    Вставляет запись в таблицу users. Если запись с таким TELEGRAM_ID уже существует, обновляет поля.
+    Обновляет указанный столбец в таблицах users и date для заданного TELEGRAM_ID.
     """
     with connection.cursor() as cursor:
+        # Обновление значения в таблице users
         cursor.execute(
-            '''
-            INSERT INTO users (TELEGRAM_ID, TRIAL_NEDERLAND, NEDERLAND, TRIAL_FRANCE, FRANCE, TRIAL_GERMANY, GERMANY)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            f'''
+            INSERT INTO users (TELEGRAM_ID, {column})
+            VALUES (%s, %s)
             ON CONFLICT (TELEGRAM_ID) DO UPDATE SET
-                TRIAL_NEDERLAND = COALESCE(EXCLUDED.TRIAL_NEDERLAND, users.TRIAL_NEDERLAND),
-                NEDERLAND = COALESCE(EXCLUDED.NEDERLAND, users.NEDERLAND),
-                TRIAL_FRANCE = COALESCE(EXCLUDED.TRIAL_FRANCE, users.TRIAL_FRANCE),
-                FRANCE = COALESCE(EXCLUDED.FRANCE, users.FRANCE),
-                TRIAL_GERMANY = COALESCE(EXCLUDED.TRIAL_GERMANY, users.TRIAL_GERMANY),
-                GERMANY = COALESCE(EXCLUDED.GERMANY, users.GERMANY)
+                {column} = COALESCE(EXCLUDED.{column},users.{column})
             ''',
-            (telegram_id, trial_nederland, nederland, trial_france, france, trial_germany, germany)
+            (telegram_id,value_users)
         )
+
+        # Обновление значения в таблице date
+        cursor.execute(
+            f'''
+            INSERT INTO DATE (TELEGRAM_ID, {column})
+            VALUES (%s, %s)
+            ON CONFLICT (TELEGRAM_ID) DO UPDATE SET
+                {column} = EXCLUDED.{column}
+            ''',
+            (telegram_id, value_date)
+        )
+
+    connection.commit()
 
 
 async def get_url(telegram_id: str):
@@ -82,41 +89,92 @@ def create_connection():
     )
 
 
-async def delete_data(connection, telegram_id: str, param: str):
-    with connection.cursor() as cursor:
-        query = f"""
-        UPDATE users
-        SET {param} = NULL
-        WHERE telegram_id = %s
-        """
-        cursor.execute(query, (telegram_id,))
-        connection.commit()
+
+from datetime import datetime, timedelta
 
 
-async def delete_url(mode: str, telegram_id: str, param: str):
-    time_mapping = {"30min": 1800, "30days": 2592000}  # 1800 секунд = 30 минут
-    wait_time = time_mapping.get(mode)
-
-    await asyncio.sleep(wait_time)  # Ждём 30 минут или 30 дней
-
-    connection = create_connection()  # Заново создаем подключение
+async def check_and_delete_expired_data():
+    """
+    Проверяет таблицу date каждые 5 минут и удаляет просроченные значения в таблицах users и subscriptions.
+    """
+    # Подключение к базе данны
+    connection = create_connection()
     connection.autocommit = True
 
-    try:
-        await delete_data(connection, telegram_id, param)  # Удаляем данные
-    finally:
-        connection.close()  # Закрываем соединение
+    while True:
+        with connection.cursor() as cursor:
+            current_time = datetime.now()
+
+            # Проверяем таблицу date на просроченные записи и удаляем их из users и subscriptions
+            await delete_expired_data(connection, current_time)
+
+            await asyncio.sleep(300)  # Ждём 5 минут
+
+
+async def delete_expired_data(connection, current_time):
+    """
+    Удаляет просроченные записи в таблицах users и subscriptions.
+    """
+    params = ['TRIAL_NEDERLAND', 'NEDERLAND', 'TRIAL_FRANCE', 'FRANCE', 'TRIAL_GERMANY', 'GERMANY']
+
+    # Обрабатываем каждый столбец для проверки
+    for column in params:
+        # Формируем запрос для получения просроченных записей
+        query = f"""
+            SELECT TELEGRAM_ID, {column} FROM date
+            WHERE {column}::timestamp < %s;
+        """
+
+        # Выполняем запрос
+        with connection.cursor() as cursor:
+            cursor.execute(query, (current_time,))
+            expired_entries = cursor.fetchall()
+
+        # Если есть просроченные записи, обрабатываем их
+        for entry in expired_entries:
+            telegram_id = entry[0]
+
+            # Удаляем данные из таблицы users
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    UPDATE users
+                    SET {column} = NULL
+                    WHERE TELEGRAM_ID = %s;
+                    """,
+                    (telegram_id,)
+                )
+
+            # Удаляем данные из таблицы subscriptions
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    UPDATE date
+                    SET {column} = NULL
+                    WHERE TELEGRAM_ID = %s;
+                    """,
+                    (telegram_id,)
+                )
+
+    # Сохраняем изменения в базе данных
+    connection.commit()
+
+
+
+
+# Закрываем соединение
 
 
 def check_and_create_table(connection):
     """
-    Проверяет наличие таблицы users и создает ее, если она не существует.
+    Проверяет наличие таблиц users и date, создает их, если они не существуют.
     """
     with connection.cursor() as cursor:
+        # Проверка и создание таблицы users
         cursor.execute("SELECT to_regclass('public.users');")
         result = cursor.fetchone()
         if result[0] is None:
-            print("Таблица не существует, создаем таблицу...")
+            print("Таблица users не существует, создаем таблицу...")
             cursor.execute(
                 '''
                 CREATE TABLE users(
@@ -131,6 +189,27 @@ def check_and_create_table(connection):
                 )
                 '''
             )
+
+        # Проверка и создание таблицы date
+        cursor.execute("SELECT to_regclass('public.date');")
+        result = cursor.fetchone()
+        if result[0] is None:
+            print("Таблица date не существует, создаем таблицу...")
+            cursor.execute(
+                '''
+                CREATE TABLE date(
+                    id serial PRIMARY KEY,
+                    TELEGRAM_ID varchar(20) NOT NULL UNIQUE,
+                    TRIAL_NEDERLAND varchar(64),
+                    NEDERLAND varchar(64),
+                    TRIAL_FRANCE varchar(64),
+                    FRANCE varchar(64),
+                    TRIAL_GERMANY varchar(64),
+                    GERMANY varchar(64)
+                )
+                '''
+            )
+    connection.commit()
 
 
 async def main():
@@ -155,8 +234,10 @@ async def main():
             print("trial_germany =", us['trial_germany'])
         else:
             print("Запись не найдена.")'''
-        print(list(get_columns(connection=connection))[2:])
-
+        await insertion(connection=connection,column='trial_france',telegram_id='2281337',value_users='popa',value_date=str(datetime.now()+timedelta(seconds=50)))
+        asyncio.create_task(check_and_delete_expired_data())
+        await(asyncio.sleep(400))
+        print(get_columns(connection))
     except Exception as e:
         print("Произошла ошибка:", e)
 
