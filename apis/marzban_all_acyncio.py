@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import LiteralString, Any
 from urllib.parse import urlparse, urlunparse
 
@@ -106,7 +106,7 @@ class Marzipan:
         except:
             short_link = await self.new_user(name=name, days=timedelta(minutes=30))
             asyncio.create_task(insertion(value_users=short_link,
-                                          value_date=str(datetime.now() + timedelta(minutes=30)),
+                                          value_date=(datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat(),
                                           telegram_id=telegram_id,
                                           column=param))
             return short_link
@@ -127,7 +127,7 @@ class Marzipan:
 
             short_link = await self.new_user(name=name, days=timedelta(days=30))
             asyncio.create_task(insertion(value_users=short_link,
-                                          value_date=str(datetime.now() + timedelta(days=30)), telegram_id=telegram_id,
+                                          value_date=(datetime.now(timezone.utc) + timedelta(days=30)).isoformat(), telegram_id=telegram_id,
                                           column=param))
             return short_link
 
@@ -135,35 +135,40 @@ class Marzipan:
         asyncio.create_task(delete_expired_users.asyncio(client=self.client, expired_before=datetime.now()))
 
 
-async def get_link(telegram_id: str) -> list[Any]:
-    links = await get_url(telegram_id=telegram_id)
-    key = []
-    for _, i in links.items():
-        key.append(i)
-    return key[2:]
+async def get_link(telegram_id: str) -> list[Any] | None:
+    try:
+        links = await get_url(telegram_id=telegram_id)
+        key = []
+        for _, i in links.items():
+            key.append(i)
+        return key[2:]
+    except: return None
+
+
 
 
 # Асинхронный запуск программы
 async def main():
-    client = Marzipan(
-        url=base_url,
-        username=yours_username,
-        password=yours_password,
-        ssl=ssl
-    )
-    await client.async_init()
-    await client.delete_exp()
+    asyncio.create_task(check_and_delete_expired_data())
+    try:
+        await France.async_init()
+    except: pass
+    try:
+        await Germany.async_init()
+    except: pass
+    '''await client.delete_exp()
     print(await client.get_trial_subscription(telegram_id='2281337', param='germany'))
 
     print(await client.get_trial_subscription(telegram_id='2281337', param='france'))
     asyncio.create_task(check_and_delete_expired_data())
     await asyncio.sleep(10)
     print(await get_link(telegram_id='2281337'))
-    # print(await client.(telegram_id='2281337'))
+     print(await client.(telegram_id='2281337'))
 
-    # a= await get_link('2281337')
-    # print(a)
+     a= await get_link('2281337')
+     print(a)
+     await asyncio.sleep(10)
+    a = await get_link('2281337')
+    print(a)'''
 
 
-if __name__ == '__main__':
-    asyncio.run(main())
