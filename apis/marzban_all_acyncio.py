@@ -1,6 +1,6 @@
 import asyncio
-from datetime import datetime, timedelta
-from typing import LiteralString
+from datetime import datetime, timedelta, timezone
+from typing import LiteralString, Any
 from urllib.parse import urlparse, urlunparse
 
 from dulwich.porcelain import fetch
@@ -12,7 +12,7 @@ from marzban_api_client.models.user_create import UserCreate
 import random
 import string
 import requests
-from sqldatabase import insertion, create_connection, check_and_create_table, get_keys
+from sqldatabase import insertion, create_connection, check_and_create_table, get_url, check_and_delete_expired_data
 
 from config_marzban import base_url, yours_username, yours_password, ssl
 
@@ -35,34 +35,6 @@ def random_proxies():
              'trojan': {'password': generate_random_string(24), 'flow': ''},
              'shadowsocks': {'password': generate_random_string(24), 'method': 'chacha20-ietf-poly1305'}}
     return UserCreateProxies.from_dict(proxi)
-
-
-async def ins_in_sql(connection, name: str, telegram_id: str, param: str):
-    """params = [
-            france,
-            trial_france,
-            germany,
-            trial_germany,
-            nederland,
-            trial_nederland,
-
-            ]"""
-    print(name, param)
-
-    match param:
-        case 'france':
-            await insertion(connection=connection, telegram_id=telegram_id, france=name)
-        case 'trial_france':
-            print(1)
-            await insertion(connection=connection, telegram_id=telegram_id, trial_france=name)
-        case 'germany':
-            await insertion(connection=connection, telegram_id=telegram_id, germany=name)
-        case 'trial_germany':
-            await insertion(connection=connection, telegram_id=telegram_id, trial_germany=name)
-        case 'nederland':
-            await insertion(connection=connection, telegram_id=telegram_id, nederland=name)
-        case 'trial_nederland':
-            await insertion(connection=connection, telegram_id=telegram_id, trial_nederland=name)
 
 
 class Marzipan:
@@ -93,9 +65,7 @@ class Marzipan:
             verify_ssl=self.ssl
         )
 
-    async def new_user(self, name: str, data_limit: int = None, days: timedelta = None) -> tuple[
-                                                                                               str, LiteralString, datetime | None] | \
-                                                                                           tuple[str, LiteralString]:
+    async def new_user(self, name: str, data_limit: int = None, days: timedelta = None) -> str:
         """Создание нового пользователя."""
         limit_time = None
         expire_timestamp = None
@@ -107,7 +77,7 @@ class Marzipan:
             response1: UserResponse = await get_user.asyncio(client=self.client, username=name)
             full_link = '\n'.join(response1.links[:-2:])
             short_link = f'{self.base_url}{response1.subscription_url}'
-            return short_link, full_link
+            return short_link
         except Exception:
             user_template = UserCreate(
                 username=name,
@@ -119,93 +89,86 @@ class Marzipan:
             response1: UserResponse = await get_user.asyncio(client=self.client, username=user_template.username)
             full_link = '\n'.join(response1.links[:-2:])
             short_link = f'{self.base_url}{response1.subscription_url}'
-            return short_link, full_link, limit_time
+            return short_link
 
     async def get_trial_subscription(self, telegram_id: str, param: str):
         """Создание временной подписки."""
         name = 'a' + generate_random_string(5)
-        connection = create_connection()
-        connection.autocommit = True
-        check_and_create_table(connection)
+        await check_and_create_table()
+        param = 'trial_' + param
         try:
-            key = get_keys(connection=connection, telegram_id=telegram_id)['trial_' + param]
-            response1: UserResponse = await get_user.asyncio(client=self.client, username=key)
-            full_link = '\n'.join(response1.links[:-2:])
-            short_link = f'{self.base_url}{response1.subscription_url}'
-            print(123)
-            return short_link
+            short_link = await get_url(telegram_id=telegram_id)
+            short_link = short_link.get(param)
+            if short_link is not None:
+                return short_link
+            else:
+                raise
         except:
-            await ins_in_sql(connection=connection, name=name, telegram_id=telegram_id, param='trial_' + param)
-            return await self.new_user(name=name, days=timedelta(minutes=30), data_limit=1073741824)
-        finally:
-            connection.close()
+            short_link = await self.new_user(name=name, days=timedelta(minutes=30))
+            asyncio.create_task(insertion(value_users=short_link,
+                                          value_date=(datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat(),
+                                          telegram_id=telegram_id,
+                                          column=param))
+            return short_link
 
     async def get_subscription(self, telegram_id: str, param: str):
         """Создание подписки."""
         name = 'a' + generate_random_string(5)
-        connection = create_connection()
-        connection.autocommit = True
-        check_and_create_table(connection)
+        await check_and_create_table()
         try:
-            key = get_keys(connection=connection, telegram_id=telegram_id)[param]
-            response1: UserResponse = await get_user.asyncio(client=self.client, username=key)
-            full_link = '\n'.join(response1.links[:-2:])
-            short_link = f'{self.base_url}{response1.subscription_url}'
-            print(123)
-            return short_link
+            short_link = await get_url(telegram_id=telegram_id)
+            short_link = short_link.get(param)
+
+            if short_link is not None:
+                return short_link
+            else:
+                raise
         except:
-            await ins_in_sql(connection=connection, name=name, telegram_id=telegram_id, param=param)
-            return await self.new_user(name=name, days=timedelta(days=30))
-        finally:
-            connection.close()
+
+            short_link = await self.new_user(name=name, days=timedelta(days=30))
+            asyncio.create_task(insertion(value_users=short_link,
+                                          value_date=(datetime.now(timezone.utc) + timedelta(days=30)).isoformat(), telegram_id=telegram_id,
+                                          column=param))
+            return short_link
 
     async def delete_exp(self):
-        await delete_expired_users.asyncio(client=self.client, expired_before=datetime.now())
+        asyncio.create_task(delete_expired_users.asyncio(client=self.client, expired_before=datetime.now()))
 
-    async def get_key_(self, telegram_id: str) -> list[str | None] | None:
-        keys = []
-        connection = create_connection()
-        connection.autocommit = True
-        try:
-            keyl = list(get_keys(connection=connection, telegram_id=telegram_id).items())[2:]
-            '''params = [
-                'trial_nederland',
-                'nederland',
-                'trial_france',
-                'france',
-                'trial_germany',
-                'germany',
-            ]'''
-            for _, i in keyl:
-                try:
-                    key = i
-                    response1: UserResponse = await get_user.asyncio(client=self.client, username=key)
-                    full_link = '\n'.join(response1.links[:-2:])
-                    short_link = f'{self.base_url}{response1.subscription_url}'
-                    keys.append(short_link)
-                except:
-                    keys.append(None)
 
-            return keys
-        except:
-            return None
+async def get_link(telegram_id: str) -> list[Any] | None:
+    try:
+        links = await get_url(telegram_id=telegram_id)
+        key = []
+        for _, i in links.items():
+            key.append(i)
+        return key[2:]
+    except: return None
+
+
 
 
 # Асинхронный запуск программы
 async def main():
-    client = Marzipan(
-        url=base_url,
-        username=yours_username,
-        password=yours_password,
-        ssl=ssl
-    )
-    await client.async_init()
-    await client.delete_exp()
-    # print(await client.get_trial_subscription(telegram_id='2281337', param='france'))
-    print(await client.get_key_(telegram_id='87324'))
+    asyncio.create_task(check_and_delete_expired_data())
+    try:
+        await France.async_init()
+    except: pass
+    try:
+        await Germany.async_init()
+    except: pass
+    '''await client.delete_exp()
+    print(await client.get_trial_subscription(telegram_id='2281337', param='germany'))
 
-    # print(await client.get_subscription(telegram_id='2281337', param='france'))
+    print(await client.get_trial_subscription(telegram_id='2281337', param='france'))
+    asyncio.create_task(check_and_delete_expired_data())
+    await asyncio.sleep(10)
+    print(await get_link(telegram_id='2281337'))
+     print(await client.(telegram_id='2281337'))
+
+     a= await get_link('2281337')
+     print(a)
+     await asyncio.sleep(10)
+    a = await get_link('2281337')
+    print(a)'''
 
 
-if __name__ == '__main__':
-    asyncio.run(main())
