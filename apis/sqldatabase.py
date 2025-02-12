@@ -1,6 +1,6 @@
 import asyncpg
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from config import user, password, host, port, dbname
 
 
@@ -27,7 +27,7 @@ async def insertion(column: str, value_users: str, value_date, telegram_id: str)
                 ON CONFLICT (TELEGRAM_ID) DO UPDATE SET
                     {column} = EXCLUDED.{column}
                 ''',
-                telegram_id, value_date
+                telegram_id,str(value_date)
             )
     finally:
         await connection.close()
@@ -87,9 +87,10 @@ async def check_and_delete_expired_data():
     connection = await create_connection()
     try:
         while True:
-            current_time = datetime.now()
+            current_time = datetime.now(timezone.utc).isoformat()
             await delete_expired_data(connection, current_time)
-            await asyncio.sleep(300)  # Ждём 5 минут
+            await asyncio.sleep(30)
+            print('удаление')  # Ждём 5 минут
     finally:
         await connection.close()
 
@@ -102,7 +103,7 @@ async def delete_expired_data(connection, current_time):
     for column in params:
         query = f"""
             SELECT TELEGRAM_ID, {column} FROM date
-            WHERE {column}::timestamp < $1;
+            WHERE {column} < $1;
         """
         expired_entries = await connection.fetch(query, current_time)
         for entry in expired_entries:
@@ -175,13 +176,7 @@ async def main():
     создает таблицу (если необходимо), вставляет запись и выводит результат.
     """
     try:
-        await check_and_create_table()
-        await insertion(column='trial_france', telegram_id='2281337', value_users='popa',
-                        value_date=str(datetime.now() + timedelta(seconds=10)))
-        a = await get_url(telegram_id='2281337')
-        print(a)
-        asyncio.create_task(check_and_delete_expired_data())
-        await asyncio.sleep(10)
+        await check_and_delete_expired_data()
     except Exception as e:
         print("Произошла ошибка:", e)
 
