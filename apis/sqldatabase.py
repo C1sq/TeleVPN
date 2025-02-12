@@ -1,106 +1,173 @@
-import psycopg2
-from config import user, password, host, port, dbname
+import asyncpg
 import asyncio
-from psycopg2.extras import RealDictCursor
+from datetime import datetime, timedelta, timezone
+from config import user, password, host, port, dbname
 
 
-class UserRecord:
-    def __init__(self, data, columns):
-        # Создаем атрибуты для каждого столбца
-        for column, value in zip(columns, data):
-            setattr(self, column.lower(), value)
-
-
-async def insertion(connection, telegram_id: str, trial_nederland: str = None, nederland: str = None,
-                    trial_france: str = None, france: str = None, trial_germany: str = None,
-                    germany: str = None) -> None:
+async def insertion(column: str, value_users: str, value_date, telegram_id: str) -> None:
     """
-    Вставляет запись в таблицу users1. Если запись с таким TELEGRAM_ID уже существует, обновляет поля.
+    Обновляет указанный столбец в таблицах users и date для заданного TELEGRAM_ID.
     """
-    with connection.cursor() as cursor:
-        cursor.execute(
-            '''
-            INSERT INTO users1 (TELEGRAM_ID, TRIAL_NEDERLAND, NEDERLAND, TRIAL_FRANCE, FRANCE, TRIAL_GERMANY, GERMANY)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (TELEGRAM_ID) DO UPDATE SET
-                TRIAL_NEDERLAND = COALESCE(EXCLUDED.TRIAL_NEDERLAND, users1.TRIAL_NEDERLAND),
-                NEDERLAND = COALESCE(EXCLUDED.NEDERLAND, users1.NEDERLAND),
-                TRIAL_FRANCE = COALESCE(EXCLUDED.TRIAL_FRANCE, users1.TRIAL_FRANCE),
-                FRANCE = COALESCE(EXCLUDED.FRANCE, users1.FRANCE),
-                TRIAL_GERMANY = COALESCE(EXCLUDED.TRIAL_GERMANY, users1.TRIAL_GERMANY),
-                GERMANY = COALESCE(EXCLUDED.GERMANY, users1.GERMANY)
-            ''',
-            (telegram_id, trial_nederland, nederland, trial_france, france, trial_germany, germany)
-        )
+    connection = await create_connection()
+    try:
+        async with connection.transaction():
+            await connection.execute(
+                f'''
+                INSERT INTO users (TELEGRAM_ID, {column})
+                VALUES ($1, $2)
+                ON CONFLICT (TELEGRAM_ID) DO UPDATE SET
+                    {column} = COALESCE(EXCLUDED.{column},users.{column})
+                ''',
+                telegram_id, value_users
+            )
+            await connection.execute(
+                f'''
+                INSERT INTO date (TELEGRAM_ID, {column})
+                VALUES ($1, $2)
+                ON CONFLICT (TELEGRAM_ID) DO UPDATE SET
+                    {column} = EXCLUDED.{column}
+                ''',
+                telegram_id,str(value_date)
+            )
+    finally:
+        await connection.close()
 
 
-def get_keys(connection, telegram_id: str):
+async def get_url(telegram_id: str):
     """
-    Получает запись из таблицы users1 по TELEGRAM_ID и возвращает объект UserRecord.
+    Получает запись из таблицы users по TELEGRAM_ID и возвращает объект UserRecord.
     Если запись не найдена, возвращает None.
     """
-    with connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
-        cursor.execute(
+    connection = await create_connection()
+    try:
+        row = await connection.fetchrow(
             '''
-            SELECT * FROM users1 WHERE TELEGRAM_ID = %s
+            SELECT * FROM users WHERE TELEGRAM_ID = $1
             ''',
-            (telegram_id,)
+            telegram_id
         )
-        row = cursor.fetchone()
         '''if row is None:
             return None
-
         columns = [desc[0] for desc in cursor.description]'''
         return row
+    finally:
+        await connection.close()
 
 
-def get_columns(connection):
-    with connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
-        cursor.execute(
+async def get_columns():
+    connection = await create_connection()
+    try:
+        row = await connection.fetchrow(
             '''
-            SELECT * FROM users1 
+            SELECT * FROM users
             '''
         )
-        row = cursor.fetchone()
         return row
+    finally:
+        await connection.close()
 
 
-def create_connection():
+async def create_connection():
     """
     Создает и возвращает соединение с базой данных.
     """
-    return psycopg2.connect(
+    return await asyncpg.connect(
         user=user,
         password=password,
         host=host,
-        port=port,  # Убедитесь, что в config.py значение port корректное (например, число 5432 или строка '5432')
-        dbname=dbname
+        port=port,
+        database=dbname
     )
 
 
-def check_and_create_table(connection):
+async def check_and_delete_expired_data():
     """
-    Проверяет наличие таблицы users1 и создает ее, если она не существует.
+    Проверяет таблицу date каждые 5 минут и удаляет просроченные значения в таблицах users и subscriptions.
     """
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT to_regclass('public.users1');")
-        result = cursor.fetchone()
+    connection = await create_connection()
+    try:
+        while True:
+            current_time = datetime.now(timezone.utc).isoformat()
+            await delete_expired_data(connection, current_time)
+            await asyncio.sleep(30)
+            print('удаление')  # Ждём 5 минут
+    finally:
+        await connection.close()
+
+
+async def delete_expired_data(connection, current_time):
+    """
+    Удаляет просроченные записи в таблицах users и subscriptions.
+    """
+    params = ['TRIAL_NEDERLAND', 'NEDERLAND', 'TRIAL_FRANCE', 'FRANCE', 'TRIAL_GERMANY', 'GERMANY']
+    for column in params:
+        query = f"""
+            SELECT TELEGRAM_ID, {column} FROM date
+            WHERE {column} < $1;
+        """
+        expired_entries = await connection.fetch(query, current_time)
+        for entry in expired_entries:
+            telegram_id = entry['telegram_id']
+            await connection.execute(
+                f"""
+                UPDATE users
+                SET {column} = NULL
+                WHERE TELEGRAM_ID = $1;
+                """,
+                telegram_id
+            )
+            await connection.execute(
+                f"""
+                UPDATE date
+                SET {column} = NULL
+                WHERE TELEGRAM_ID = $1;
+                """,
+                telegram_id
+            )
+
+
+async def check_and_create_table():
+    """
+    Проверяет наличие таблиц users и date, создает их, если они не существуют.
+    """
+    connection = await create_connection()
+    try:
+        result = await connection.fetchrow("SELECT to_regclass('public.users');")
         if result[0] is None:
-            print("Таблица не существует, создаем таблицу...")
-            cursor.execute(
+            print("Таблица users не существует, создаем таблицу...")
+            await connection.execute(
                 '''
-                CREATE TABLE users1(
+                CREATE TABLE users(
                     id serial PRIMARY KEY,
                     TELEGRAM_ID varchar(20) NOT NULL UNIQUE,
-                    TRIAL_NEDERLAND varchar(6),
-                    NEDERLAND varchar(6),
-                    TRIAL_FRANCE varchar(6),
-                    FRANCE varchar(6),
-                    TRIAL_GERMANY varchar(6),
-                    GERMANY varchar(6)
+                    TRIAL_NEDERLAND varchar(64),
+                    NEDERLAND varchar(64),
+                    TRIAL_FRANCE varchar(64),
+                    FRANCE varchar(64),
+                    TRIAL_GERMANY varchar(64),
+                    GERMANY varchar(64)
                 )
                 '''
             )
+        result = await connection.fetchrow("SELECT to_regclass('public.date');")
+        if result[0] is None:
+            print("Таблица date не существует, создаем таблицу...")
+            await connection.execute(
+                '''
+                CREATE TABLE date(
+                    id serial PRIMARY KEY,
+                    TELEGRAM_ID varchar(20) NOT NULL UNIQUE,
+                    TRIAL_NEDERLAND varchar(64),
+                    NEDERLAND varchar(64),
+                    TRIAL_FRANCE varchar(64),
+                    FRANCE varchar(64),
+                    TRIAL_GERMANY varchar(64),
+                    GERMANY varchar(64)
+                )
+                '''
+            )
+    finally:
+        await connection.close()
 
 
 async def main():
@@ -108,32 +175,10 @@ async def main():
     Основная функция, которая устанавливает соединение с базой данных,
     создает таблицу (если необходимо), вставляет запись и выводит результат.
     """
-    connection = None
     try:
-        connection = create_connection()
-        connection.autocommit = True
-
-        check_and_create_table(connection)
-
-        # Пример вставки записи
-        '''await insertion(connection, telegram_id='87324', trial_germany='aBcw8')
-
-        # Получаем запись и выводим значение поля trial_germany
-        us = get_keys(connection, telegram_id='87324')
-        print(us)
-        if us is not None:
-            print("trial_germany =", us['trial_germany'])
-        else:
-            print("Запись не найдена.")'''
-        print(list(get_columns(connection=connection))[2:])
-
+        await check_and_delete_expired_data()
     except Exception as e:
         print("Произошла ошибка:", e)
-
-    finally:
-        if connection:
-            connection.close()
-            print("Соединение с PostgreSQL закрыто")
 
 
 if __name__ == '__main__':
